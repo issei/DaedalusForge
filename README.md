@@ -21,7 +21,7 @@ Here is a list of all the projects currently in the repository:
 
 | File | Description | Inputs | Outputs | Dependencies |
 | :--- | :--- | :--- | :--- | :--- |
-| `lead_prospecting_agent.ipynb` | An automated lead prospecting pipeline using a multi-agent system. It leverages Google Gemini to generate search queries for the Apollo.io API, fetches lead data, removes duplicates, and exports the results. | - `GOOGLE_API_KEY` <br> - `APOLLO_API_KEY` | A `leads_apollo.csv` file with the list of prospected leads. | `langchain`, `google-generativeai`, `httpx`, `pandas` |
+| `Notebook_de_Prospecção.ipynb` | An automated lead prospecting pipeline using a multi-agent system. It leverages Google Gemini to generate search queries for the Apollo.io API, fetches lead data, removes duplicates, and exports the results. | - `GOOGLE_API_KEY` <br> - `APOLLO_API_KEY` | A `leads_apollo.csv` file with the list of prospected leads. | `langchain`, `google-generativeai`, `httpx`, `pandas` |
 
 <br>
 
@@ -29,7 +29,7 @@ Here is a list of all the projects currently in the repository:
 
 | File | Description | Inputs | Outputs | Dependencies |
 | :--- | :--- | :--- | :--- | :--- |
-| `google_gemini_ai_agent_course.ipynb` | A notebook from the Alura + Google Gemini "AI Agents" course. It demonstrates how to build a simple AI agent that acts as a Service Desk triager, classifying user requests based on internal policies. | - `GEMINI_API_KEY` <br> - A user's text message | A JSON object classifying the request's `decision`, `urgency`, and `missing_fields`. | `langchain`, `google-generativeai` |
+| `Imersão_Agentes_de_IA_Alura_+_Google_Gemini_ipynb_Aula_01.ipynb` | A notebook from the Alura + Google Gemini "AI Agents" course. It demonstrates how to build a simple AI agent that acts as a Service Desk triager, classifying user requests based on internal policies. | - `GEMINI_API_KEY` <br> - A user's text message | A JSON object classifying the request's `decision`, `urgency`, and `missing_fields`. | `langchain`, `google-generativeai` |
 
 ---
 
@@ -43,5 +43,4 @@ I suggest adding the following badges to the top of this README to give it a mor
 ![Last Commit](https://img.shields.io/github/last-commit/issei/DaedalusForge)
 ```
 
-### ⚠️ A Note on a temporary file
-Due to a temporary technical issue, you may see the file `Imersão_Agentes_de_IA_Alura_+_Google_Gemini_ipynb_Aula_01.ipynb` in the root directory. This is a duplicate of `study_projects/google_gemini_ai_agent_course.ipynb` and can be ignored. It will be removed as soon as the issue is resolved.
+
