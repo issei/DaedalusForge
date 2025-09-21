@@ -1,71 +1,161 @@
-[![Python Version](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/issei/DaedalusForge)
+[![Python Version](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Last Commit](https://img.shields.io/github/last-commit/issei/DaedalusForge)](https://github.com/issei/DaedalusForge/commits/main)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-# DaedalusForge: Experimentos e Automações com IA
+# DaedalusForge: Orquestração de Agentes de IA e Automações
 
-Bem-vindo ao DaedalusForge! Este repositório é minha forja pessoal para experimentação, aprendizado e construção no universo da Inteligência Artificial.
+Bem-vindo ao DaedalusForge! Este repositório é minha forja pessoal para experimentação, aprendizado e construção no universo da Inteligência Artificial. Inspirado em Dédalo, o lendário artesão da mitologia grega, este espaço é dedicado a criar e testar soluções de IA, desde automações práticas até sistemas complexos de orquestração de agentes.
 
-## 🏛️ Sobre o Repositório
+O projeto principal aqui é uma **plataforma genérica e reconfigurável para orquestração de múltiplos agentes de IA**, onde processos são definidos por uma **DSL (Domain-Specific Language) em YAML**.
 
-Inspirado em Dédalo, o lendário artesão da mitologia grega, este espaço é dedicado a criar e testar soluções de IA, desde automações práticas até projetos de estudo. Aqui, documento minha jornada explorando novas técnicas, frameworks e modelos.
+---
 
-## 🚀 Getting Started
+## ✨ Principais Recursos do Orquestrador
 
-A maioria dos projetos são notebooks auto-contidos. Para executá-los, você tem duas opções:
+*   **Arquitetura em Camadas**: Core → SDK de Agentes → DSL/Processos → Infra/Observabilidade.
+*   **Orquestração via DSL**: Descreva nós (agentes), arestas e condições de transição em um arquivo YAML, tornando o fluxo de trabalho desacoplado do código.
+*   **Agentes Plugáveis**: Suporte para diferentes tipos de agentes, como `LLMAgent` (para interagir com modelos de linguagem), `DeterministicAgent` (para executar regras de negócio) e `JudgeAgent` (para avaliar a qualidade das saídas).
+*   **Estado Imutável**: Cada passo do processo gera um novo estado global através de um merge profundo, garantindo previsibilidade e facilitando testes.
+*   **Condições Seguras**: A lógica de transição é avaliada de forma segura via AST (Abstract Syntax Tree), sem o uso de `eval()` ou `exec()`, prevenindo a execução de código arbitrário.
+*   **Fallback Inteligente**: Utiliza `LangGraph` para a execução do grafo se a biblioteca estiver instalada; caso contrário, recorre a um runner sequencial interno, preservando a lógica do processo.
 
-### 1. Ambiente Local
+---
+
+## 🚀 Começando
+
+### 1. Ambiente Local (Recomendado)
 
 **Pré-requisitos:**
-- Python 3.10+
-- Git
+*   Python 3.10+
+*   Git
 
 **Passos:**
-1. Clone o repositório:
-   ```bash
-   git clone https://github.com/issei/DaedalusForge.git
-   cd DaedalusForge
-   ```
-2. Crie um arquivo `.env` na raiz do projeto para gerenciar suas chaves de API. Use o `.env.example` como modelo:
-   ```
-   # Chaves para APIs do Google e outras ferramentas
-   GOOGLE_API_KEY="sua_chave_aqui"
-   APOLLO_API_KEY="sua_chave_aqui"
-   DUMPLING_API_KEY="sua_chave_aqui"
-   DUMPLING_KB_ID="seu_id_aqui"
-   ```
-3. Instale as dependências, que geralmente estão listadas no topo de cada notebook.
+1.  Clone o repositório:
+    ```bash
+    git clone https://github.com/issei/DaedalusForge.git
+    cd DaedalusForge
+    ```
+2.  Crie e ative um ambiente virtual:
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate  # No Windows: .venv\Scripts\activate
+    ```
+3.  Crie um arquivo `.env` na raiz do projeto para gerenciar suas chaves de API. Você pode copiar o `.env.example` como modelo.
+4.  Instale as dependências de desenvolvimento:
+    ```bash
+    pip install -r requirements-dev.txt
+    ```
+5.  Execute o processo de exemplo:
+    ```bash
+    python src/main.py
+    ```
 
-### 2. Google Colab
+### 2. Usando `make`
 
-Clique no badge "Open in Colab" no topo deste README para abrir o repositório diretamente no Google Colab.
+Se você tiver o `make` instalado, pode usar os seguintes comandos:
+```bash
+make install-dev     # Cria o venv, instala dependências e configura o pre-commit
+make test            # Roda os testes
+make run             # Executa o processo de exemplo
+```
 
-Para gerenciar suas chaves de API no Colab, use o gerenciador de "Secrets" (ícone de chave no menu à esquerda) e adicione as chaves necessárias para cada notebook.
+### 3. Google Colab
 
-## 📂 Projetos
+Para os notebooks de estudo, você pode usar o Google Colab. Procure pelo badge "Open in Colab" nos arquivos `.ipynb`.
 
-### /automations
-Scripts e notebooks focados em automações práticas e de valor real.
+---
 
-| File | Description | Inputs | Outputs | Dependencies |
-| :--- | :--- | :--- | :--- | :--- |
-| `lançamento.ipynb` | Um sistema multi-agente com **LangGraph** que gera textos de marketing (copy) para um lançamento. O grafo implementa um ciclo colaborativo de geração, revisão e refinamento para garantir a qualidade e o alinhamento estratégico. | - Chaves de API <br> - Briefing do lançamento (JSON) | Arquivos `JSON` e `Markdown` com a copy final aprovada. | `langchain`, `langgraph`, `google-generativeai`, `httpx`, `pydantic`, `python-dotenv` |
-| `Notebook_de_Prospecção.ipynb` | Pipeline automatizado de prospecção de leads usando um sistema multi-agente. Gera buscas para a API do Apollo.io, coleta os dados, remove duplicatas e exporta o resultado. | - Chaves de API | Arquivo `leads_apollo.csv` com a lista de leads. | `langchain`, `google-generativeai`, `httpx`, `pandas` |
+## 📂 Estrutura do Projeto
 
-<br>
+```
+.
+├── app/                  # Código fonte da aplicação do orquestrador
+│   ├── __init__.py
+│   ├── agents.py         # Definição das classes de Agentes
+│   ├── main.py           # Ponto de entrada para executar o orquestrador
+│   ├── model.py          # Modelos de dados (GlobalState, etc.)
+│   ├── orchestrator.py   # Core da orquestração (carrega DSL, executa o grafo)
+│   └── safe_eval.py      # Avaliador seguro de condições
+├── configs/              # Arquivos de configuração para os processos
+│   └── process_config.yaml
+├── notebooks/            # Notebooks de estudo e automações (provas de conceito)
+│   ├── automations/
+│   └── study_projects/
+├── .env.example          # Exemplo de arquivo para variáveis de ambiente
+├── .gitignore
+├── Dockerfile
+├── Makefile
+├── README.md
+├── pyproject.toml
+├── requirements.txt      # Dependências de runtime
+└── requirements-dev.txt  # Dependências de desenvolvimento
+```
 
-### /study_projects
-Notebooks e scripts de cursos, tutoriais e estudos pessoais.
+---
 
-| File | Description | Inputs | Outputs | Dependencies |
-| :--- | :--- | :--- | :--- | :--- |
-| `Imersão_Agentes_de_IA_Alura_+_Google_Gemini_ipynb_Aula_01.ipynb` | Notebook da Imersão Agentes de IA (Alura + Google). Demonstra um agente simples que atua como um triador de Service Desk, classificando chamados com base em políticas internas. | - Chave de API <br> - Mensagem de texto do usuário | Objeto `JSON` classificando o chamado. | `langchain`, `google-generativeai` |
+## 🔬 Projetos e Notebooks
+
+### Aplicação Principal
+
+| Projeto | Descrição | Como Executar |
+| :--- | :--- | :--- |
+| `app/` | **Orquestrador Multi-Agente**: Uma plataforma para executar processos complexos definidos em YAML. O exemplo em `configs/process_config.yaml` demonstra um fluxo de geração de copy para marketing. | `python -m app.main` |
+
+### Automações e PoCs (em `notebooks/`)
+
+| File | Description |
+| :--- | :--- |
+| `automations/lançamento.ipynb` | Sistema multi-agente com **LangGraph** que gera textos de marketing (copy) para um lançamento de forma colaborativa. |
+| `automations/Notebook_de_Prospecção.ipynb` | Pipeline automatizado de prospecção de leads usando um sistema multi-agente e a API do Apollo.io. |
+| `study_projects/...` | Notebooks da Imersão Agentes de IA (Alura + Google) e outros estudos. |
+
+---
+
+## 🧱 Conceitos Principais do Orquestrador
+
+### GlobalState (Imutável)
+O estado do processo é um objeto imutável que contém:
+*   `context`: Dados de entrada e briefing.
+*   `artifacts`: Saídas geradas pelos agentes (ex: `copy_principal`).
+*   `quality`: Métricas e status de revisão (ex: `review_status`).
+*   `messages`: Log de eventos para auditoria.
+
+### Agentes
+*   **`LLMAgent`**: Interage com um LLM para gerar conteúdo.
+*   **`DeterministicAgent`**: Executa uma função Python pura para tarefas previsíveis.
+*   **`JudgeAgent`**: Avalia artefatos e atualiza o status de qualidade.
+
+### DSL (YAML)
+O fluxo é definido em um arquivo YAML com três seções principais:
+*   `process`: Define o nome, o ponto de partida e a condição de término.
+*   `agents`: Configura cada nó do grafo (tipo, propósito, parâmetros).
+*   `edges`: Define as transições entre os agentes, com condições opcionais.
+
+---
+
+## 🐳 Docker
+
+Para construir e executar a aplicação em um contêiner Docker:
+```bash
+docker build -t multiagent-orchestrator .
+docker run --rm -it --env-file .env multiagent-orchestrator
+```
+
+---
+
+## 🛠️ Qualidade de Código e CI
+
+*   **Formatação e Linting**: `make format` e `make lint` (usando Black e Ruff).
+*   **Checagem de Tipos**: `make typecheck` (usando MyPy).
+*   **Testes**: `make test` (usando Pytest).
+*   **Pre-commit**: `pre-commit install` para garantir a qualidade do código antes de cada commit.
 
 ---
 
 ## 📜 Licença
 
 Este projeto é distribuído sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+
 
 
 

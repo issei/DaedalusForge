@@ -7,7 +7,7 @@ agents:
   analise_dores_promessas:
     kind: "llm"
     purpose: "Analisar briefing e extrair dores/promessas."
-    model_name: "gpt-simulado"
+    model_name: "gemini-1.5-flash"  # Otimizado para extração rápida
     prompt_template: |
       Você é um estrategista de marketing. Extraia dores, objeções e promessas
       a partir do briefing abaixo e sintetize insights acionáveis.
@@ -22,7 +22,7 @@ agents:
   geracao_copy:
     kind: "llm"
     purpose: "Criar uma copy principal com base no contexto."
-    model_name: "gpt-simulado"
+    model_name: "gpt-4o"  # Otimizado para máxima criatividade
     prompt_template: |
       Gere uma copy principal (headline + subtítulo + CTA) para o infoproduto.
       Use o contexto consolidado e as dores/promessas extraídas.
@@ -33,7 +33,7 @@ agents:
   adaptacao_canais:
     kind: "llm"
     purpose: "Adaptar a copy para canais (Instagram e Email)."
-    model_name: "gpt-simulado"
+    model_name: "gemini-1.5-flash"  # Otimizado para adaptação rápida
     prompt_template: |
       Adapte a copy principal para Instagram e Email (assunto + corpo).
       Copy principal: {artifacts[copy_principal]}
@@ -54,15 +54,15 @@ edges:
   - from: "geracao_copy"
     to: "critico_revisor"
 
-  # Se precisar refinar, vai para adaptação de canais (loop) e volta para o crítico
+  # Se precisar refinar, o loop pode ser ajustado para regenerar a copy
   - from: "critico_revisor"
-    to: "adaptacao_canais"
+    to: "geracao_copy" # Alterado para regenerar a copy em vez de adaptar
     condition: "quality.review_status == 'REFINAR' and (quality.attempts is None or quality.attempts < 3)"
 
-  - from: "adaptacao_canais"
-    to: "critico_revisor"
-
-  # Aprovado => fim
+  # Aprovado => vai para adaptação e depois fim
   - from: "critico_revisor"
-    to: "__end__"
+    to: "adaptacao_canais"
     condition: "quality.review_status == 'APROVADO'"
+    
+  - from: "adaptacao_canais"
+    to: "__end__"

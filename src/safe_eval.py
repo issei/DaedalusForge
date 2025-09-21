@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 from typing import Any, Dict
-from app.model import GlobalState
+from model import GlobalState
 
 
 class SafeConditionEvaluator:

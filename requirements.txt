@@ -1,0 +1,8 @@
+pydantic
+PyYAML
+langgraph
+langchain
+langchain-google-genai
+langchain-openai
+tenacity
+python-dotenv

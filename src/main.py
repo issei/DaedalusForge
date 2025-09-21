@@ -3,12 +3,12 @@ from __future__ import annotations
 import sys
 import os
 import argparse
+from dotenv import load_dotenv
 
-# Adiciona o diretório pai (raiz do projeto) ao sys.path
-# para que os módulos possam ser encontrados.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Carrega variáveis de ambiente do arquivo .env na raiz do projeto
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-from app.orchestrator import Orchestrator
+from orchestrator import Orchestrator
 
 # Briefing inicial simulado
 initial_context = {
@@ -24,7 +24,10 @@ initial_context = {
 }
 
 if __name__ == "__main__":
-    orch = Orchestrator(config_path="process_config.yaml")
+    # Constrói o caminho absoluto para o arquivo de configuração
+    config_path = os.path.join(os.path.dirname(__file__), "..", "configs", "process_config.yaml")
+    
+    orch = Orchestrator(config_path=config_path)
     final_state = orch.run(initial_context=initial_context)
 
     print("\n--- ARTEFATOS FINAIS ---")

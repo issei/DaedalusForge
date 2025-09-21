@@ -12,9 +12,9 @@ except Exception:
     StateGraph = None  # type: ignore
     END = "__END__"    # type: ignore
 
-from app.model import GlobalState, AgentOutput, apply_agent_output
-from app.agents import BaseAgent, LLMAgent, DeterministicAgent, JudgeAgent
-from app.safe_eval import SafeConditionEvaluator
+from model import GlobalState, AgentOutput, apply_agent_output
+from agents import BaseAgent, LLMAgent, DeterministicAgent, JudgeAgent
+from safe_eval import SafeConditionEvaluator
 
 
 class DSLValidationError(Exception):
@@ -36,6 +36,8 @@ class Orchestrator:
     def _load_and_validate_dsl(self, config_path: str) -> Dict[str, Any]:
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
+            if not isinstance(cfg, dict) or "process" not in cfg or "agents" not in cfg:
+                raise ValueError("Arquivo de configuração YAML inválido. Faltam seções 'process' ou 'agents'.")
 
         # Estrutura mínima
         required_top = {"process", "agents", "edges"}
