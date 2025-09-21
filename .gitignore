@@ -50,7 +50,6 @@ temp/
 
 # --- Notebooks ---
 .ipynb_checkpoints/
-*.ipynb
 
 # --- Editors / OS ---
 .DS_Store
