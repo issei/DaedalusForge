@@ -1,0 +1,4 @@
+pydantic>=2.7
+PyYAML>=6.0
+# opcional, usado se instalado; caso contrário, o Orchestrator roda em modo sequencial
+langgraph>=0.2

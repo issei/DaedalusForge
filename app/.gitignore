@@ -1,0 +1,65 @@
+# --- Python bytecode / cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- C extensions ---
+*.so
+*.pyd
+*.dll
+
+# --- Packaging / build ---
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Env & secrets (do not commit) ---
+.env
+.env.*
+*.env
+
+# --- Tests / coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit.xml
+
+# --- Type checkers / linters / tools ---
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.cache/
+
+# --- Logs & temp ---
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+*.ipynb
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
+
+# --- Project artifacts (optional; keep if you want local outputs only) ---
+artifacts/
+outputs/
+reports/

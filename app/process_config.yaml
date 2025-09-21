@@ -1,0 +1,68 @@
+process:
+  name: "geracao-copy-marketing-v1"
+  start: "analise_dores_promessas"
+  done_condition: "quality.review_status == 'APROVADO'"
+
+agents:
+  analise_dores_promessas:
+    kind: "llm"
+    purpose: "Analisar briefing e extrair dores/promessas."
+    model_name: "gpt-simulado"
+    prompt_template: |
+      Você é um estrategista de marketing. Extraia dores, objeções e promessas
+      a partir do briefing abaixo e sintetize insights acionáveis.
+      Briefing: {context[briefing]}
+    output_key: "dores_promessas"
+
+  consolidador_contexto:
+    kind: "deterministic"
+    purpose: "Consolidar briefing + dores/promessas em contexto canônico."
+    function: "consolidar_contexto"
+
+  geracao_copy:
+    kind: "llm"
+    purpose: "Criar uma copy principal com base no contexto."
+    model_name: "gpt-simulado"
+    prompt_template: |
+      Gere uma copy principal (headline + subtítulo + CTA) para o infoproduto.
+      Use o contexto consolidado e as dores/promessas extraídas.
+      Contexto consolidado: {context[contexto_consolidado]}
+      Dores/promessas: {artifacts[dores_promessas]}
+    output_key: "copy_principal"
+
+  adaptacao_canais:
+    kind: "llm"
+    purpose: "Adaptar a copy para canais (Instagram e Email)."
+    model_name: "gpt-simulado"
+    prompt_template: |
+      Adapte a copy principal para Instagram e Email (assunto + corpo).
+      Copy principal: {artifacts[copy_principal]}
+      Entregue como se fosse um bloco de texto único.
+    output_key: "copy_canais"
+
+  critico_revisor:
+    kind: "judge"
+    purpose: "Revisar a copy e decidir APROVADO/REFINAR."
+
+edges:
+  - from: "analise_dores_promessas"
+    to: "consolidador_contexto"
+
+  - from: "consolidador_contexto"
+    to: "geracao_copy"
+
+  - from: "geracao_copy"
+    to: "critico_revisor"
+
+  # Se precisar refinar, vai para adaptação de canais (loop) e volta para o crítico
+  - from: "critico_revisor"
+    to: "adaptacao_canais"
+    condition: "quality.review_status == 'REFINAR' and (quality.attempts is None or quality.attempts < 3)"
+
+  - from: "adaptacao_canais"
+    to: "critico_revisor"
+
+  # Aprovado => fim
+  - from: "critico_revisor"
+    to: "__end__"
+    condition: "quality.review_status == 'APROVADO'"
