@@ -1,288 +1,193 @@
-# Prompt mestre para gerar `process_config.yaml`
+# Prompt Mestre para Gerar `process_config.yaml`
 
-**Guia prático para elaborar novos processos no Orquestrador de Múltiplos Agentes (Python + YAML DSL)**
+**Guia de Engenharia de Prompt para criar processos no Orquestrador DaedalusForge**
 
-Este documento fornece um **prompt especializado** (copiar/colar) para você usar com um LLM a fim de **gerar arquivos `process_config.yaml` válidos** para a plataforma.
-Inclui: instruções, formato esperado, restrições do avaliador de condições, checklist e **exemplos**.
+Este documento fornece um **prompt especializado** para ser usado com um LLM avançado a fim de **gerar arquivos `process_config.yaml` válidos e complexos** para a plataforma DaedalusForge. Ele foi atualizado para incluir os novos tipos de agentes (`tool_using`, `reflection`, `supervisor`) e as melhores práticas de orquestração.
 
----
+-----
 
-## Como usar
+## Como Usar
 
-1. Copie o **Prompt Mestre** abaixo para sua ferramenta de IA.
-2. Preencha os campos entre `<...>` com os dados do novo processo (nome, agentes, funções determinísticas, critérios de done).
-3. O modelo retornará **apenas YAML** dentro de um fence \`\`\`yaml — pronto para salvar como `process_config.yaml`.
-4. Rode o orquestrador com `python main.py --process process_config.yaml`.
+1.  Copie todo o conteúdo deste documento (a partir de "Prompt Mestre") para sua ferramenta de IA.
+2.  Na seção `### Entradas do Usuário`, descreva em linguagem natural o processo que você deseja criar. Preencha os campos entre `<...>` com os detalhes do seu novo processo (nome, agentes, ferramentas, etc.).
+3.  O modelo de linguagem seguirá as regras, o esquema e os exemplos para gerar **apenas o código YAML** correspondente ao seu processo.
+4.  Salve a saída como um novo arquivo `.yaml` e execute-o com o orquestrador.
 
----
+-----
 
-## ✅ Regras importantes do DSL (compatíveis com o orquestrador)
+## ✅ Regras da DSL do DaedalusForge
 
-* Top-level: `process`, `agents`, `edges` (todos obrigatórios).
-* `process`:
+  * **Estrutura Principal**: O YAML deve conter as chaves `process`, `agents`, e `edges` (obrigatória para fluxos estáticos).
+  * **`process`**:
+      * `name` (string), `start` (string, nome de um agente).
+      * `done_condition` (string, opcional): Expressão segura que, quando verdadeira, finaliza o fluxo. Essencial para fluxos com loops.
+  * **`agents` (mapa)**: Cada agente tem um `kind` e um `purpose`.
+      * `kind: "llm"`: Agente simples de prompt. Requer `model_name`, `prompt_template`, `output_key`.
+      * `kind: "deterministic"`: Executa uma função Python. Requer `function` (nome deve estar no `ToolRegistry`).
+      * `kind: "reflection"`: Avalia um artefato e gera feedback textual. Requer `model_name` e `prompt_template`. A saída de texto deve conter "APROVADO" ou "REFINAR".
+      * `kind: "tool_using"`: Agente ReAct que pode usar ferramentas. Requer `model_name`, `tools` (lista de nomes do `ToolRegistry`), `prompt_template`, `output_key`.
+      * `kind: "supervisor"`: Roteia o fluxo dinamicamente. Requer `model_name`, `available_agents` (lista de nós que ele pode chamar), `prompt_template` (deve instruir a escolher um agente ou "FINISH").
+  * **`edges` (lista)**: Define transições estáticas.
+      * `from`, `to` (nome do agente ou `__end__`).
+      * `condition` (opcional): Expressão segura para transição condicional.
+  * **Avaliador de Condições Seguro**:
+      * Suporta apenas `and`, `or`, `not`, comparações (`==`, `!=`, `<`, `>`, etc.), e `is None` / `is not None`.
+      * Acesso restrito a `quality.*`, `artifacts.*`, `context.*`.
+  * **Interpolação em Prompts**: Use chaves do estado, como `{context[user_request]}` ou `{artifacts[draft]}`.
 
-  * `name` (string), `start` (nome de um agente existente),
-  * `done_condition` (string) — expressão **segura** (ver abaixo).
-* `agents` (mapa):
+-----
 
-  * `kind`: `"llm" | "deterministic" | "judge"`.
-  * `purpose`: descrição curta (opcional).
-  * Para `llm`: `model_name`, `prompt_template` (use bloco `|`), `output_key`.
-  * Para `deterministic`: `function` (nome deve existir no registry do orquestrador).
-  * Para `judge`: sem campos extras obrigatórios (usa regra default, salvo se você trocar no código).
-* `edges` (lista): itens com `from`, `to`, e **opcional** `condition`.
-* **Fim do fluxo**: use `to: "__end__"` ou cumpra `process.done_condition`.
-* **Interpolação em prompts**: use chaves do estado:
-  `{context[...]}`, `{artifacts[...]}`, `{quality[...]}` (ex.: `{context[briefing]}`).
-* **Avaliador de Condições Seguro** (sem `eval/exec`):
-  Suporta somente `and`, `or`, `not`, comparações `== != < <= > >=`, e `is None` / `is not None`.
-  Acesso apenas a `quality.*`, `artifacts.*`, `context.*`.
-
----
-
-## 🧠 Prompt Mestre (copie e cole)
-
-> Cole o texto abaixo na IA e preencha os campos `<...>`:
+## 🧠 Prompt Mestre (Copie e cole na sua IA)
 
 ````markdown
-Você é um gerador estrito de YAML para a plataforma de orquestração de múltiplos agentes.
-Seu trabalho é produzir **apenas** um arquivo `process_config.yaml` **válido** para o DSL a seguir.
+Você é um gerador especialista de YAML para a plataforma de orquestração de múltiplos agentes DaedalusForge.
+Sua única função é produzir um arquivo `process_config.yaml` perfeitamente válido, seguindo rigorosamente o esquema, as regras e os exemplos fornecidos.
 
-### Esquema do DSL (obrigatório)
+### Esquema do DSL (Obrigatório)
 - process:
   - name: string
   - start: string (nome de um agente definido em `agents`)
-  - done_condition: string (expressão segura; ver seção "Condições")
+  - done_condition: string (opcional, expressão segura de conclusão)
 - agents: mapa { nome_do_agente: { ... } }
   - campos obrigatórios:
-    - kind: "llm" | "deterministic" | "judge"
+    - kind: "llm" | "deterministic" | "reflection" | "tool_using" | "supervisor"
+    - purpose: string (descrição curta e clara)
   - se kind == "llm":
-    - model_name: string
+    - model_name: string (ex: "gemini-1.5-flash", "gpt-4o")
     - prompt_template: string multilinha (usar bloco `|`)
-    - output_key: string (chave em `artifacts`)
-    - purpose: string (opcional)
+    - output_key: string (chave para salvar em `artifacts`)
+    - force_json_output: boolean (opcional, `true` se a saída precisar ser JSON)
   - se kind == "deterministic":
-    - function: string (deve existir no registry do orquestrador)
-    - purpose: string (opcional)
-  - se kind == "judge":
-    - purpose: string (opcional)
-- edges: lista de arestas
+    - function: string (nome da função no `ToolRegistry`)
+  - se kind == "reflection": (avalia a qualidade de um artefato)
+    - model_name: string
+    - prompt_template: string (deve instruir o LLM a gerar um feedback e terminar com a palavra "APROVADO" ou "REFINAR:")
+  - se kind == "tool_using": (agente ReAct que usa ferramentas)
+    - model_name: string
+    - tools: lista de nomes de ferramentas do `ToolRegistry`
+    - prompt_template: string
+    - output_key: string
+  - se kind == "supervisor": (roteia o fluxo dinamicamente)
+    - model_name: string
+    - available_agents: lista de nomes de agentes que ele pode chamar
+    - prompt_template: string (deve instruir a escolher um agente da lista ou "FINISH")
+- edges: lista de arestas (obrigatória se não houver supervisor)
   - item: { from: string, to: string, condition?: string }
 
-### Condições (SafeConditionEvaluator)
-- Apenas: `and`, `or`, `not`; comparações `== != < <= > >=`; `is None` / `is not None`.
-- Acesso somente a: `quality.*`, `artifacts.*`, `context.*`.
-- Exemplos válidos:
-  - "quality.review_status == 'APROVADO'"
-  - "quality.review_status == 'REFINAR' and (quality.attempts is None or quality.attempts < 3)"
-  - "artifacts.spec_arquitetura is not None and quality.coverage >= 0.8"
+### Regras de Condições e Prompts
+- **Condições Seguras**: Permitem apenas `and`, `or`, `not`; `==`, `!=`, `<`, `<=`, `>`, `>=`; `is None`, `is not None`. Acesso somente a `quality.*`, `artifacts.*`, `context.*`.
+- **Interpolação nos Prompts**: Use `{context[chave]}`, `{artifacts[chave]}`, `{quality[chave]}`.
+- **Prompts Multilinha**: Use sempre o bloco `|` do YAML.
 
-### Interpolação nos prompts (LLM)
-- Use `{context[...]}`, `{artifacts[...]}`, `{quality[...]}` (ex.: `{context[briefing]}`).
-- Use bloco YAML `|` para prompts multilinha.
+### Ferramentas e Funções Disponíveis no `ToolRegistry`
+- **Funções Determinísticas**: `["consolidar_contexto"]`
+- **Ferramentas LangChain**: `["tavily_search", "python_repl"]`
 
-### Restrições de Saída
-- Responda **somente** com um bloco ```yaml contendo o YAML final.
-- Não inclua comentários fora do YAML, explicações ou texto adicional.
-- Evite campos fora do esquema acima.
+### Validações Obrigatórias (Checklist Interno)
+Antes de gerar a resposta, você DEVE validar se:
+1.  O `process.start` aponta para um agente existente em `agents`.
+2.  Todos os `edges.from` e `edges.to` referenciam agentes existentes ou `__end__`.
+3.  Todas as `condition` e `done_condition` usam a sintaxe segura e acessam apenas `quality`, `artifacts` ou `context`.
+4.  Cada `kind` de agente possui todos os seus campos obrigatórios.
+5.  Nomes de `function` e `tools` existem no `ToolRegistry` acima.
+6.  Em fluxos com `supervisor`, as arestas geralmente conectam os agentes de trabalho de volta ao supervisor.
 
-### Entradas do usuário (preencha):
-- process.name: <nome_do_processo>
-- process.start: <nome_do_agente_inicial>
-- process.done_condition: <expressão_segura_de_conclusão>
-- function_registry_disponivel: [<lista_de_funcoes_deterministicas_disponiveis_no_orquestrador>]
-- agentes (defina cada um):
-  - <agente_1>:
-      kind: <llm|deterministic|judge>
-      se llm:
-        model_name: <modelo>
-        output_key: <chave_artifact>
-        prompt_template: <prompt_multilinha>
-      se deterministic:
-        function: <nome_na_function_registry_disponivel>
-      (purpose é opcional)
-  - <agente_2>: ...
-- edges (ordem importa; condicionais primeiro, depois fallback):
-  - from: <nome>
-    to: <nome|__end__>
-    condition?: <expr>
+### Formato de Resposta
+- Responda **APENAS** com um único bloco de código ```yaml.
+- Não inclua explicações, comentários fora do YAML ou qualquer texto adicional.
 
-### Validações que você deve cumprir antes de responder
-1) `process.start` existe em `agents`.
-2) Todos os `edges.from` e `edges.to` referenciam agentes existentes (ou `"__end__"`).
-3) Toda `condition` está dentro da gramática suportada e usa apenas `quality|artifacts|context`.
-4) Se `done_condition` referir `quality.review_status`, inclua um agente `judge`.
-5) Para `deterministic`, use apenas nomes listados em `function_registry_disponivel`.
-
-### Formato de resposta
-Apenas:
-```yaml
-# process_config.yaml
-process:
-  ...
-agents:
-  ...
-edges:
-  ...
-```
-
-Agora gere o YAML com base nestas informações específicas:
-- process.name: <preencher>
-- process.start: <preencher>
-- process.done_condition: <preencher>
-- function_registry_disponivel: <preencher: ["consolidar_contexto", ...]>
-- agentes e edges desejados: <descrever brevemente aqui>
-````
-
----
-
-## 🧩 Exemplo pronto #1 — Geração de Copy (marketing)
-
-> Pode ser usado como few-shot para orientar a IA (compatível com o orquestrador).
-
+### Exemplo de Uso #1: Geração de Copy com Ciclo de Refinamento (Usa "reflection")
 ```yaml
 process:
-  name: "geracao-copy-marketing-v1"
+  name: "geracao-copy-com-refinamento-v2"
   start: "analise_dores_promessas"
   done_condition: "quality.review_status == 'APROVADO'"
 
 agents:
   analise_dores_promessas:
     kind: "llm"
-    purpose: "Analisar briefing e extrair dores/promessas."
-    model_name: "gpt-simulado"
+    purpose: "Analisar briefing e extrair dores e promessas."
+    model_name: "gemini-1.5-flash"
     prompt_template: |
-      Você é um estrategista de marketing. Extraia dores, objeções e promessas
-      a partir do briefing abaixo e sintetize insights acionáveis.
+      Analise o briefing e extraia as principais dores e promessas do público-alvo.
       Briefing: {context[briefing]}
-    output_key: "dores_promessas"
-
-  consolidador_contexto:
-    kind: "deterministic"
-    purpose: "Consolidar briefing + dores/promessas em contexto canônico."
-    function: "consolidar_contexto"
+    output_key: "analise_inicial"
 
   geracao_copy:
     kind: "llm"
-    purpose: "Criar uma copy principal com base no contexto."
-    model_name: "gpt-simulado"
+    purpose: "Criar uma copy principal com base na análise e no feedback."
+    model_name: "gpt-4o"
     prompt_template: |
-      Gere uma copy principal (headline + subtítulo + CTA).
-      Contexto consolidado: {context[contexto_consolidado]}
-      Dores/promessas: {artifacts[dores_promessas]}
-    output_key: "copy_principal"
-
-  adaptacao_canais:
-    kind: "llm"
-    purpose: "Adaptar a copy para canais (Instagram e Email)."
-    model_name: "gpt-simulado"
-    prompt_template: |
-      Adapte a copy principal para Instagram e Email.
-      Copy principal: {artifacts[copy_principal]}
-    output_key: "copy_canais"
+      Gere uma copy principal (headline + corpo + CTA).
+      Análise de Dores/Promessas: {artifacts[analise_inicial]}
+      Feedback para melhoria (se houver): {quality[feedback]}
+    output_key: "copy_draft"
 
   critico_revisor:
-    kind: "judge"
-    purpose: "Revisar a copy e decidir APROVADO/REFINAR."
+    kind: "reflection"
+    purpose: "Revisar a copy, fornecer feedback e decidir se está aprovada."
+    model_name: "gemini-1.5-pro"
+    prompt_template: |
+      Você é um Diretor de Criação. Avalie a copy abaixo ({artifacts[copy_draft]}) contra o briefing ({context[briefing]}).
+      Se estiver perfeita, responda apenas 'APROVADO'.
+      Se precisar de melhorias, responda 'REFINAR:' seguido de um feedback claro e acionável.
 
 edges:
-  - from: "analise_dores_promessas"
-    to: "consolidador_contexto"
+  - { from: "analise_dores_promessas", to: "geracao_copy" }
+  - { from: "geracao_copy", to: "critico_revisor" }
+  - { from: "critico_revisor", to: "geracao_copy", condition: "quality.review_status == 'REFINAR' and quality.attempts < 3" }
+  - { from: "critico_revisor", to: "__end__", condition: "quality.review_status == 'APROVADO' or quality.attempts >= 3" }
+````
 
-  - from: "consolidador_contexto"
-    to: "geracao_copy"
-
-  - from: "geracao_copy"
-    to: "critico_revisor"
-
-  - from: "critico_revisor"
-    to: "adaptacao_canais"
-    condition: "quality.review_status == 'REFINAR' and (quality.attempts is None or quality.attempts < 3)"
-
-  - from: "adaptacao_canais"
-    to: "critico_revisor"
-
-  - from: "critico_revisor"
-    to: "__end__"
-    condition: "quality.review_status == 'APROVADO'"
-```
-
----
-
-## 🧩 Exemplo pronto #2 — Documentação de Software
+### Exemplo de Uso \#2: Análise Financeira com Supervisor (Usa "supervisor" e "tool\_using")
 
 ```yaml
 process:
-  name: "doc-software-v1"
-  start: "ux"
-  done_condition: "artifacts.spec_arquitetura is not None and artifacts.plano_testes is not None and artifacts.guia_ux is not None"
+  name: "supervisor-financial-analysis-v1"
+  start: "supervisor"
 
 agents:
-  ux:
-    kind: "llm"
-    purpose: "Gerar guia de UX e critérios de usabilidade."
-    model_name: "gpt-simulado"
+  supervisor:
+    kind: "supervisor"
+    purpose: "Orquestrar a análise financeira com base na solicitação do usuário."
+    model_name: "gemini-1.5-pro"
+    available_agents: ["market_researcher", "python_analyst"]
     prompt_template: |
-      Você é UX Lead. Gere um guia de UX com heurísticas e critérios.
-      Briefing: {context[briefing]}
-    output_key: "guia_ux"
+      Você é o supervisor de uma equipe de análise financeira. Com base na solicitação '{context[user_request]}' e nos artefatos atuais {artifacts}, decida qual especialista deve agir a seguir ou se a tarefa está concluída.
+      Opções: {available_agents}
 
-  arquitetura:
-    kind: "llm"
-    purpose: "Especificação de arquitetura e trade-offs."
-    model_name: "gpt-simulado"
-    prompt_template: |
-      Você é Arquiteto de Software. Produza spec de arquitetura, componentes e trade-offs.
-      Guia UX: {artifacts[guia_ux]}
-      Requisitos: {context[requisitos]}
-    output_key: "spec_arquitetura"
+  market_researcher:
+    kind: "tool_using"
+    purpose: "Pesquisar notícias e dados de mercado usando a web."
+    model_name: "gemini-1.5-flash"
+    tools: ["tavily_search"]
+    prompt_template: "Pesquise as últimas notícias e o sentimento do mercado sobre a empresa mencionada em '{context[user_request]}'."
+    output_key: "market_summary"
 
-  seguranca:
-    kind: "llm"
-    purpose: "Riscos de segurança e controles."
-    model_name: "gpt-simulado"
-    prompt_template: |
-      Você é Engenheiro de Segurança. Liste riscos, controles e checagens.
-      Spec de Arquitetura: {artifacts[spec_arquitetura]}
-    output_key: "checklist_seg"
-
-  testes:
-    kind: "llm"
-    purpose: "Plano de testes (unit, integração, e2e)."
-    model_name: "gpt-simulado"
-    prompt_template: |
-      Você é QA Lead. Gere plano de testes baseado na spec e riscos.
-      Spec: {artifacts[spec_arquitetura]}
-      Riscos: {artifacts[checklist_seg]}
-    output_key: "plano_testes"
+  python_analyst:
+    kind: "tool_using"
+    purpose: "Executar código Python para gerar visualizações e análises estatísticas."
+    model_name: "gemini-1.5-pro"
+    tools: ["python_repl"]
+    prompt_template: "Com base no resumo de mercado em {artifacts[market_summary]}, escreva e execute um código Python para criar um gráfico de barras mostrando o sentimento das notícias."
+    output_key: "chart_image"
 
 edges:
-  - from: "ux"
-    to: "arquitetura"
-  - from: "arquitetura"
-    to: "seguranca"
-  - from: "seguranca"
-    to: "testes"
+  - { from: "supervisor", to: "market_researcher", condition: "quality.next_agent == 'market_researcher'" }
+  - { from: "supervisor", to: "python_analyst", condition: "quality.next_agent == 'python_analyst'" }
+  - { from: "supervisor", to: "__end__", condition: "quality.next_agent == 'FINISH'" }
+  - { from: "market_researcher", to: "supervisor" }
+  - { from: "python_analyst", to: "supervisor" }
 ```
 
----
+### Entradas do Usuário (Preencha para gerar seu processo)
 
-## 🔍 Checklist de validação antes de usar em produção
+  - **Nome do Processo**: `<Ex: criacao-de-roteiro-youtube-v1>`
+  - **Agente Inicial**: `<Ex: planejador_de_pauta>`
+  - **Condição de Término (Opcional)**: `<Ex: artifacts.roteiro_final is not None and quality.review_status == 'APROVADO'>`
+  - **Descrição do Fluxo e Agentes**: `<Descreva aqui em linguagem natural o que você quer que o sistema faça. Por exemplo: "Quero um processo que comece com um agente planejando a pauta de um vídeo. Em seguida, um pesquisador deve usar a busca na web para coletar informações. Depois, um roteirista cria a primeira versão do roteiro. Por fim, um crítico revisa o roteiro. Se precisar refinar, volta para o roteirista; se aprovado, o processo termina.">`
 
-* [ ] `process.start` é um agente existente.
-* [ ] Todas as arestas `from/to` apontam para agentes existentes (ou `"__end__"`).
-* [ ] `done_condition` é uma expressão **segura** e válida (apenas `quality|artifacts|context`).
-* [ ] Se `done_condition` usa `quality.review_status`, existe um agente `judge`.
-* [ ] Cada agente `llm` possui `model_name`, `prompt_template` (bloco `|`) e `output_key`.
-* [ ] Cada `deterministic` usa `function` presente no **registry** do orquestrador.
-* [ ] As referências nos prompts (`{context[...]}`, `{artifacts[...]}`) existem ou são toleradas pelo agente.
-* [ ] Ordem das `edges`: condicionais primeiro (mais específicas), depois fallback sem condição.
+Agora, gere o `process_config.yaml` correspondente.
 
----
-
-## Dicas finais
-
-* Use nomes **curtos e descritivos** para agentes e `output_key`.
-* Prefira **um objetivo por agente**; divida tarefas maiores.
-* Coloque **gates objetivos** em `done_condition` (ex.: artifacts presentes + métricas mínimas).
-* Comece simples; adicione loops condicionais (refino) quando necessário.
+```
+```

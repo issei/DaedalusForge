@@ -1,0 +1,55 @@
+process:
+  name: "supervisor-financial-analysis-v1"
+  start: "supervisor"
+  # A condição de término é gerenciada pelo supervisor (quando ele decide 'FINISH')
+
+agents:
+  supervisor:
+    kind: "supervisor"
+    purpose: "Analisar a solicitação do usuário e decidir qual especialista deve atuar."
+    model_name: "gemini-1.5-pro"
+    available_agents: ["market_researcher", "code_interpreter"]
+    prompt_template: |
+      Você é um supervisor de uma equipe de análise financeira.
+      Sua equipe é composta por:
+      - market_researcher: Especialista em pesquisar notícias e tendências de mercado na web.
+      - code_interpreter: Especialista em executar código Python para análise de dados e visualização.
+      
+      Com base na conversa até agora e na última solicitação do usuário, qual especialista deve agir a seguir?
+      Responda apenas com o nome do especialista ou 'FINISH' se a tarefa estiver concluída.
+      Agentes disponíveis: {available_agents}
+      
+      Histórico: {messages}
+      Solicitação: {context[user_request]}
+
+  market_researcher:
+    kind: "tool_using"
+    purpose: "Pesquisar na web por notícias financeiras."
+    model_name: "gemini-1.5-flash"
+    tools: ["tavily_search"]
+    prompt_template: "Pesquise as últimas notícias sobre '{context[user_request]}'."
+    output_key: "research_summary"
+
+  code_interpreter:
+    kind: "tool_using"
+    purpose: "Executar código Python para análise e visualização de dados."
+    model_name: "gemini-1.5-pro" # Modelo mais capaz para código
+    tools: ["python_repl"]
+    prompt_template: "Com base nos dados em {artifacts[research_summary]}, gere um gráfico de barras mostrando o sentimento das notícias."
+    output_key: "chart_code"
+
+edges:
+  # O supervisor decide o fluxo dinamicamente
+  - from: "supervisor"
+    to: "market_researcher"
+    condition: "quality.next_agent == 'market_researcher'"
+  - from: "supervisor"
+    to: "code_interpreter"
+    condition: "quality.next_agent == 'code_interpreter'"
+  - from: "supervisor"
+    to: "__end__"
+    condition: "quality.next_agent == 'FINISH'"
+  
+  # Agentes de trabalho sempre retornam ao supervisor
+  - { from: "market_researcher", to: "supervisor" }
+  - { from: "code_interpreter", to: "supervisor" }

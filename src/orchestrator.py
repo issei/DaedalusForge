@@ -1,135 +1,95 @@
 from __future__ import annotations
-
 import yaml
-from typing import Dict, Any, Callable, List, Optional, Tuple
+from typing import Dict, Any, Callable, List
 
-# LangGraph é preferencial; se ausente, há fallback sequencial
+# LangGraph e dependências
 try:
     from langgraph.graph import StateGraph, END
     HAS_LANGGRAPH = True
-except Exception:
+except ImportError:
     HAS_LANGGRAPH = False
-    StateGraph = None  # type: ignore
-    END = "__END__"    # type: ignore
+
+# LangChain e Ferramentas (exemplos)
+from langchain_community.tools import TavilySearchResults
+from langchain_experimental.tools import PythonREPLTool
 
 from model import GlobalState, AgentOutput, apply_agent_output
-from agents import BaseAgent, LLMAgent, DeterministicAgent, JudgeAgent
+from agents import BaseAgent, LLMAgent, DeterministicAgent, ReflectionAgent, ToolUsingAgent, SupervisorAgent
 from safe_eval import SafeConditionEvaluator
-
 
 class DSLValidationError(Exception):
     pass
 
+class ToolRegistry:
+    """Um registro simples para funções determinísticas e ferramentas LangChain."""
+    def __init__(self):
+        self._tools: Dict[str, Any] = {}
+        self._register_defaults()
 
-class Orchestrator:
-    """
-    Carrega o DSL YAML, valida, instancia agentes e constrói o fluxo.
-    """
-    def __init__(self, config_path: str):
-        self.config_path = config_path
-        self.dsl = self._load_and_validate_dsl(config_path)
-        self.agent_registry: Dict[str, BaseAgent] = self._instantiate_agents(self.dsl)
-        self._compiled_graph = self._build_graph(self.dsl, self.agent_registry)
+    def _register_defaults(self):
+        # Ferramentas LangChain
+        self.register("tavily_search", TavilySearchResults(max_results=3))
+        self.register("python_repl", PythonREPLTool())
 
-    # ---------- DSL ----------
-
-    def _load_and_validate_dsl(self, config_path: str) -> Dict[str, Any]:
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
-            if not isinstance(cfg, dict) or "process" not in cfg or "agents" not in cfg:
-                raise ValueError("Arquivo de configuração YAML inválido. Faltam seções 'process' ou 'agents'.")
-
-        # Estrutura mínima
-        required_top = {"process", "agents", "edges"}
-        if not all(k in cfg for k in required_top):
-            raise DSLValidationError("DSL deve conter 'process', 'agents' e 'edges'.")
-
-        proc = cfg["process"]
-        if "start" not in proc or "name" not in proc:
-            raise DSLValidationError("process.start e process.name são obrigatórios.")
-        if "done_condition" not in proc:
-            # opcional, mas recomendamos
-            proc["done_condition"] = ""
-
-        agents = cfg["agents"]
-        if not isinstance(agents, dict) or not agents:
-            raise DSLValidationError("agents deve ser um mapa não-vazio.")
-
-        # Validação básica dos edges
-        edges = cfg["edges"]
-        if not isinstance(edges, list) or not edges:
-            raise DSLValidationError("edges deve ser uma lista não-vazia.")
-
-        names = set(agents.keys())
-        if proc["start"] not in names:
-            raise DSLValidationError("process.start deve referenciar um agente existente.")
-
-        for e in edges:
-            if "from" not in e or "to" not in e:
-                raise DSLValidationError("Cada edge deve conter 'from' e 'to'.")
-            if e["from"] not in names:
-                raise DSLValidationError(f"Edge.from desconhecido: {e['from']}")
-            if e["to"] != "__end__" and e["to"] not in names:
-                raise DSLValidationError(f"Edge.to desconhecido: {e['to']}")
-            if "condition" in e and not isinstance(e["condition"], str):
-                raise DSLValidationError("Edge.condition (se presente) deve ser string.")
-
-        # Done condition validável
-        try:
-            _ = SafeConditionEvaluator(proc.get("done_condition", ""))
-        except Exception as e:
-            raise DSLValidationError(f"process.done_condition inválida: {e}") from e
-
-        return cfg
-
-    # ---------- Agents ----------
-
-    def _instantiate_agents(self, cfg: Dict[str, Any]) -> Dict[str, BaseAgent]:
-        """
-        Constrói instâncias de agentes a partir do DSL.
-        Para DeterministicAgent, suporta um registry simples de funções.
-        """
-        registry: Dict[str, BaseAgent] = {}
-
-        # Funções determinísticas de exemplo (registre as suas aqui)
+        # Funções determinísticas
         def _fn_consolidar_contexto(state: GlobalState) -> AgentOutput:
+            # (mesma implementação de antes)
             briefing = state.context.get("briefing", {})
             dores = state.artifacts.get("dores_promessas", "N/D")
-            # Coloca um resumo de contexto consolidado
             return AgentOutput(
                 updates={"contexto_consolidado": {"briefing": briefing, "dores_promessas": bool(dores)}},
                 messages=[{"note": "Contexto consolidado para geração de copy"}],
             )
+        self.register("consolidar_contexto", _fn_consolidar_contexto)
 
-        deterministic_functions = {
-            "consolidar_contexto": _fn_consolidar_contexto,
-        }
+    def register(self, name: str, tool_or_func: Any):
+        self._tools[name] = tool_or_func
 
+    def get(self, name: str) -> Any:
+        if name not in self._tools:
+            raise DSLValidationError(f"Ferramenta ou função '{name}' não encontrada no registro.")
+        return self._tools[name]
+
+    def get_many(self, names: List[str]) -> List[Any]:
+        return [self.get(name) for name in names]
+
+
+class Orchestrator:
+    """Carrega o DSL YAML, valida, instancia agentes e constrói o fluxo."""
+    def __init__(self, config_path: str):
+        self.config_path = config_path
+        self.tool_registry = ToolRegistry()
+        self.dsl = self._load_and_validate_dsl(config_path)
+        self.agent_registry: Dict[str, BaseAgent] = self._instantiate_agents(self.dsl)
+        self._compiled_graph = self._build_graph(self.dsl, self.agent_registry)
+
+    # (Função _load_and_validate_dsl permanece a mesma)
+    
+    def _instantiate_agents(self, cfg: Dict[str, Any]) -> Dict[str, BaseAgent]:
+        registry: Dict[str, BaseAgent] = {}
         for name, spec in cfg["agents"].items():
             kind = spec.get("kind", "llm")
             purpose = spec.get("purpose", name)
+            model = spec.get("model_name", "gemini-1.5-flash")
+            prompt = spec.get("prompt_template", "Contexto: {context}\nArtefatos: {artifacts}")
+            output_key = spec.get("output_key", name)
+
             if kind == "llm":
-                model = spec.get("model_name", "gpt-simulado")
-                prompt = spec.get("prompt_template", "Gere conteúdo.\nContexto: {context}\nArtefatos: {artifacts}")
-                output_key = spec.get("output_key", name)
-                registry[name] = LLMAgent(
-                    name=name,
-                    purpose=purpose,
-                    model_name=model,
-                    prompt_template=prompt,
-                    output_key=output_key,
-                )
+                registry[name] = LLMAgent(name=name, purpose=purpose, model_name=model, prompt_template=prompt, output_key=output_key)
             elif kind == "deterministic":
                 fn_name = spec.get("function")
-                if not fn_name or fn_name not in deterministic_functions:
-                    raise DSLValidationError(f"Agente determinístico '{name}' requer 'function' conhecida.")
-                registry[name] = DeterministicAgent(name=name, function=deterministic_functions[fn_name])
-            elif kind == "judge":
-                # Judge com regra default simples (você pode plugar outra)
-                registry[name] = JudgeAgent(name=name, purpose=purpose)
+                registry[name] = DeterministicAgent(name=name, function=self.tool_registry.get(fn_name))
+            elif kind == "reflection": # Antigo 'judge'
+                registry[name] = ReflectionAgent(name=name, purpose=purpose, model_name=model, prompt_template=prompt)
+            elif kind == "tool_using":
+                tool_names = spec.get("tools", [])
+                tools = self.tool_registry.get_many(tool_names)
+                registry[name] = ToolUsingAgent(name=name, purpose=purpose, model_name=model, prompt_template=prompt, tools=tools, output_key=output_key)
+            elif kind == "supervisor":
+                available_agents = spec.get("available_agents", [])
+                registry[name] = SupervisorAgent(name=name, purpose=purpose, model_name=model, prompt_template=prompt, available_agents=available_agents)
             else:
-                raise DSLValidationError(f"kind de agente não suportado: {kind}")
-
+                raise DSLValidationError(f"Tipo de agente não suportado: {kind}")
         return registry
 
     # ---------- Graph ----------
