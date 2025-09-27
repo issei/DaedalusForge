@@ -192,3 +192,86 @@ class SupervisorAgent(BaseAgent):
 
         # O resultado é armazenado em `quality` para ser usado na aresta condicional
         return AgentOutput(quality={"next_agent": next_agent})
+
+
+# No final de src/agents.py
+import httpx
+
+# ... (após a classe SupervisorAgent)
+
+class UTCPAgent(BaseAgent):
+    """
+    Agente que executa chamadas de API diretas com base em manuais UTCP.
+    """
+    def __init__(self, name: str, purpose: str, model_name: str, prompt_template: str, utcp_manuals: List[Dict], output_key: str):
+        super().__init__(name)
+        self.purpose = purpose
+        self.utcp_manuals = utcp_manuals
+        self.output_key = output_key
+        # Usa um LLMAgent internamente para a lógica de decisão
+        self.llm_agent = LLMAgent(
+            name,
+            purpose,
+            model_name,
+            prompt_template,
+            output_key="decision",
+            force_json_output=True
+        )
+
+    def execute(self, state: GlobalState) -> AgentOutput:
+        print(f"Executando UTCPAgent '{self.name}'...")
+
+        # 1. Usa o LLM para decidir qual ferramenta chamar e com quais parâmetros
+        # O prompt deve ser construído para guiar o LLM a retornar um JSON
+        # com "tool_name" e "parameters".
+        prompt_com_manuais = f"{self.llm_agent.prompt_template}\n\nManuais de Ferramentas Disponíveis (UTCP):\n{self.utcp_manuals}"
+
+        # Cria um novo prompt para o LLM que inclui os manuais
+        temp_llm = LLMAgent(self.name, self.purpose, self.llm_agent.model_name, prompt_com_manuais, "decision", True)
+        llm_output = temp_llm.execute(state)
+        decision = llm_output.artifacts.get("decision", {})
+
+        if not decision or "tool_name" not in decision:
+            return AgentOutput(quality={"error": "UTCPAgent não conseguiu decidir qual ferramenta usar."})
+
+        tool_name = decision.get("tool_name")
+        parameters = decision.get("parameters", {})
+
+        # 2. Encontra o manual e a configuração da ferramenta
+        manual_name, tool_func = tool_name.split('.')
+        manual = next((m for m in self.utcp_manuals if m.get("name") == manual_name), None)
+        if not manual:
+            return AgentOutput(quality={"error": f"Manual UTCP '{manual_name}' não encontrado."})
+
+        tool_spec = next((t for t in manual.get("tools", []) if t.get("name") == tool_func), None)
+        if not tool_spec:
+            return AgentOutput(quality={"error": f"Ferramenta '{tool_func}' não encontrada no manual '{manual_name}'."})
+
+        # 3. Constrói e executa a chamada HTTP com httpx
+        config = manual.get("provider_config", {})
+        base_url = config.get("base_url", "")
+        endpoint = tool_spec.get("endpoint", "")
+        method = tool_spec.get("method", "GET").upper()
+
+        api_key_env = config.get("auth", {}).get("secret")
+        api_key = os.getenv(api_key_env) if api_key_env else None
+
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+        try:
+            with httpx.Client() as client:
+                if method == "GET":
+                    response = client.get(f"{base_url}{endpoint}", params=parameters, headers=headers)
+                elif method == "POST":
+                    response = client.post(f"{base_url}{endpoint}", json=parameters, headers=headers)
+                # Adicionar outros métodos (PUT, DELETE) se necessário
+
+                response.raise_for_status()
+                result = response.json()
+
+            return AgentOutput(artifacts={self.output_key: result})
+
+        except httpx.HTTPStatusError as e:
+            return AgentOutput(quality={"error": f"Erro na chamada da API: {e.response.status_code} - {e.response.text}"})
+        except Exception as e:
+            return AgentOutput(quality={"error": f"Erro inesperado no UTCPAgent: {e}"})
