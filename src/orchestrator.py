@@ -14,7 +14,7 @@ from langchain_community.tools import TavilySearchResults
 from langchain_experimental.tools import PythonREPLTool
 
 from model import GlobalState, AgentOutput, apply_agent_output
-from agents import BaseAgent, LLMAgent, DeterministicAgent, ReflectionAgent, ToolUsingAgent, SupervisorAgent
+from agents import BaseAgent, LLMAgent, DeterministicAgent, ReflectionAgent, ToolUsingAgent, SupervisorAgent, UTCPAgent
 from safe_eval import SafeConditionEvaluator
 
 class DSLValidationError(Exception):
@@ -60,6 +60,7 @@ class Orchestrator:
         self.config_path = config_path
         self.tool_registry = ToolRegistry()
         self.dsl = self._load_and_validate_dsl(config_path)
+        self.utcp_tools = self.dsl.get("tools", {}) # Carrega os manuais UTCP
         self.agent_registry: Dict[str, BaseAgent] = self._instantiate_agents(self.dsl)
         self._compiled_graph = self._build_graph(self.dsl, self.agent_registry)
 
@@ -88,6 +89,25 @@ class Orchestrator:
             elif kind == "supervisor":
                 available_agents = spec.get("available_agents", [])
                 registry[name] = SupervisorAgent(name=name, purpose=purpose, model_name=model, prompt_template=prompt, available_agents=available_agents)
+            elif kind == "utcp_agent":  # Adicionar este novo bloco
+                tool_names = spec.get("tools", [])
+                # Garante que os manuais existam antes de passá-los
+                utcp_manuals = []
+                for t_name in tool_names:
+                    manual = self.utcp_tools.get(t_name)
+                    if not manual:
+                        raise DSLValidationError(f"Manual UTCP '{t_name}' não encontrado na seção 'tools'.")
+                    manual['name'] = t_name # Injeta o nome no manual para referência
+                    utcp_manuals.append(manual)
+
+                registry[name] = UTCPAgent(
+                    name=name,
+                    purpose=purpose,
+                    model_name=model,
+                    prompt_template=prompt,
+                    utcp_manuals=utcp_manuals,
+                    output_key=output_key
+                )
             else:
                 raise DSLValidationError(f"Tipo de agente não suportado: {kind}")
         return registry

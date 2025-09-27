@@ -1,7 +1,30 @@
+# Em configs/supervisor_financial_analysis.yaml
+
 process:
-  name: "supervisor-financial-analysis-v1"
+  name: "supervisor-financial-analysis-utcp-v1"
   start: "supervisor"
-  # A condição de término é gerenciada pelo supervisor (quando ele decide 'FINISH')
+
+# Nova seção para definir ferramentas externas via UTCP
+tools:
+  financial_news_api:
+    description: "API para buscar notícias financeiras sobre uma empresa."
+    provider_type: "http"
+    provider_config:
+      base_url: "https://api.example-financial-news.com/v1"
+      auth:
+        type: "bearer"
+        secret: "FINANCIAL_NEWS_API_KEY" # Nome da variável de ambiente
+    tools:
+      - name: "search"
+        description: "Busca notícias por ticker de empresa."
+        endpoint: "/search"
+        method: "GET"
+        parameters:
+          - name: "ticker"
+            in: "query"
+            type: "string"
+            description: "O ticker da ação da empresa (ex: GOOGL, AAPL)."
+            required: true
 
 agents:
   supervisor:
@@ -23,32 +46,30 @@ agents:
       Solicitação: {context[user_request]}
 
   market_researcher:
-    kind: "tool_using"
-    purpose: "Pesquisar na web por notícias financeiras."
-    model_name: "gemini-1.5-flash"
-    tools: ["tavily_search"]
-    prompt_template: "Pesquise as últimas notícias sobre '{context[user_request]}'."
+    kind: "utcp_agent" # Alterado de "tool_using"
+    purpose: "Usar a API de notícias financeiras para pesquisar informações."
+    model_name: "gemini-1.5-pro"
+    tools: ["financial_news_api"] # Referencia o manual UTCP
+    prompt_template: |
+      Sua tarefa é encontrar notícias sobre a empresa em '{context[user_request]}'.
+      Use a ferramenta 'financial_news_api.search' para isso.
+      Responda com um JSON contendo "tool_name" e "parameters".
+      Exemplo: {"tool_name": "financial_news_api.search", "parameters": {"ticker": "MSFT"}}
     output_key: "research_summary"
 
   code_interpreter:
     kind: "tool_using"
     purpose: "Executar código Python para análise e visualização de dados."
-    model_name: "gemini-1.5-pro" # Modelo mais capaz para código
+    model_name: "gemini-1.5-pro"
     tools: ["python_repl"]
     prompt_template: "Com base nos dados em {artifacts[research_summary]}, gere um gráfico de barras mostrando o sentimento das notícias."
     output_key: "chart_code"
 
 edges:
   # O supervisor decide o fluxo dinamicamente
-  - from: "supervisor"
-    to: "market_researcher"
-    condition: "quality.next_agent == 'market_researcher'"
-  - from: "supervisor"
-    to: "code_interpreter"
-    condition: "quality.next_agent == 'code_interpreter'"
-  - from: "supervisor"
-    to: "__end__"
-    condition: "quality.next_agent == 'FINISH'"
+  - { from: "supervisor", to: "market_researcher", condition: "quality.next_agent == 'market_researcher'" }
+  - { from: "supervisor", to: "code_interpreter", condition: "quality.next_agent == 'code_interpreter'" }
+  - { from: "supervisor", to: "__end__", condition: "quality.next_agent == 'FINISH'" }
   
   # Agentes de trabalho sempre retornam ao supervisor
   - { from: "market_researcher", to: "supervisor" }
