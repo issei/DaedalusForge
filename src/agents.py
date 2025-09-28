@@ -13,14 +13,14 @@ from tenacity import (
 )
 
 # LangChain para integração com LLMs e Ferramentas
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
+import httpx
 
-from model import GlobalState, AgentOutput
+from .model import GlobalState, AgentOutput
 
 class BaseAgent(ABC):
     """Contrato base para agentes plugáveis."""
@@ -34,41 +34,41 @@ class BaseAgent(ABC):
         """Executa o agente e retorna deltas para o estado."""
         raise NotImplementedError
 
+class DeterministicAgent(BaseAgent):
+    """
+    Agente que executa uma função Python determinística.
+    """
+    def __init__(self, name: str, function: Callable[[GlobalState], AgentOutput]):
+        super().__init__(name)
+        self.function = function
+
+    def execute(self, state: GlobalState) -> AgentOutput:
+        print(f"Executando DeterministicAgent '{self.name}'...")
+        try:
+            return self.function(state)
+        except Exception as e:
+            return AgentOutput(quality={"error": f"Erro ao executar a função em {self.name}: {e}"})
+
+
 class LLMAgent(BaseAgent):
     """
-    Agente que invoca um LLM com um prompt simples. (Sem alterações)
-    - propósito: Propósito do agente (para auditoria/logs).
-    - model_name: Nome do modelo (ex: "gemini-1.5-pro", "gpt-4o").
-    - prompt_template: f-string que pode referenciar chaves do state.
-    - output_key: Chave de saída em artifacts.
+    Agente que invoca um LLM com um prompt simples.
     """
     def __init__(
         self,
         name: str,
         purpose: str,
-        model_name: str,
+        llm_client: BaseChatModel,
         prompt_template: str,
         output_key: str,
         force_json_output: bool = False,
     ):
         super().__init__(name)
         self.purpose = purpose
-        self.model_name = model_name
+        self.llm = llm_client
         self.prompt_template = prompt_template
         self.output_key = output_key
         self.force_json_output = force_json_output
-
-        _google_key = os.getenv("GOOGLE_API_KEY")
-        _openai_key = os.getenv("OPENAI_API_KEY")
-
-        self.llm = None
-        if "gemini" in self.model_name.lower() and _google_key:
-            self.llm = ChatGoogleGenerativeAI(model=self.model_name, temperature=0.0, google_api_key=_google_key)
-        elif "gpt" in self.model_name.lower() and _openai_key:
-            self.llm = ChatOpenAI(model=self.model_name, temperature=0.0, openai_api_key=_openai_key)
-
-        if not self.llm:
-            raise ValueError(f"Nenhum LLM pôde ser inicializado para '{self.model_name}'.")
 
     def _render_prompt(self, state: GlobalState) -> str:
         data = {"context": state.context, "artifacts": state.artifacts, "quality": state.quality}
@@ -81,13 +81,16 @@ class LLMAgent(BaseAgent):
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
     def _invoke_llm(self, prompt: str) -> Any:
         client = self.llm
-        if self.force_json_output:
-            client = client.with_structured_output()
         try:
-            response = client.invoke([HumanMessage(content=prompt)])
-            return response.content
+            if self.force_json_output:
+                # For structured output, we expect the raw dict/list
+                return client.with_structured_output().invoke([HumanMessage(content=prompt)])
+            else:
+                # For regular output, we expect a message object
+                response = client.invoke([HumanMessage(content=prompt)])
+                return response.content
         except Exception as e:
-            print(f"Erro na chamada da API para {self.model_name}: {e}. Tentando novamente...")
+            print(f"Erro na chamada da API para o LLM: {e}. Tentando novamente...")
             raise
 
     def execute(self, state: GlobalState) -> AgentOutput:
@@ -96,38 +99,24 @@ class LLMAgent(BaseAgent):
             generated_content = self._invoke_llm(prompt)
             return AgentOutput(artifacts={self.output_key: generated_content})
         except RetryError as e:
-            error_message = f"Falha ao invocar o LLM {self.model_name} após múltiplas tentativas: {e}"
+            error_message = f"Falha ao invocar o LLM após múltiplas tentativas: {e}"
             return AgentOutput(quality={"error": error_message})
 
 
 class ToolUsingAgent(BaseAgent):
     """
-    **NOVO AGENTE**: Um agente que usa o padrão ReAct para realizar tarefas com ferramentas.
-    - Inspirado na Lição 2 e 6 dos notebooks O'Reilly.
+    Um agente que usa o padrão ReAct para realizar tarefas com ferramentas.
     """
-    def __init__(self, name: str, purpose: str, model_name: str, prompt_template: str, tools: List[BaseTool], output_key: str):
+    def __init__(self, name: str, purpose: str, llm: BaseChatModel, prompt_template: str, tools: List[BaseTool], output_key: str):
         super().__init__(name)
         self.purpose = purpose
         self.output_key = output_key
 
-        _google_key = os.getenv("GOOGLE_API_KEY")
-        _openai_key = os.getenv("OPENAI_API_KEY")
-        llm = None
-        if "gemini" in model_name.lower() and _google_key:
-            llm = ChatGoogleGenerativeAI(model=model_name, temperature=0.0, google_api_key=_google_key)
-        elif "gpt" in model_name.lower() and _openai_key:
-            llm = ChatOpenAI(model=model_name, temperature=0.0, openai_api_key=_openai_key)
-
-        if not llm:
-            raise ValueError(f"Nenhum LLM pôde ser inicializado para '{model_name}'.")
-
-        # Cria o agente ReAct
         agent_prompt = ChatPromptTemplate.from_template(prompt_template)
         react_agent = create_react_agent(llm, tools, agent_prompt)
         self.agent_executor = AgentExecutor(agent=react_agent, tools=tools, verbose=True)
 
     def execute(self, state: GlobalState) -> AgentOutput:
-        # A entrada para o agente ReAct é uma combinação do estado
         input_str = f"Contexto: {state.context}\nArtefatos: {state.artifacts}\nQualidade: {state.quality}"
         try:
             result = self.agent_executor.invoke({"input": input_str})
@@ -137,25 +126,21 @@ class ToolUsingAgent(BaseAgent):
             return AgentOutput(quality={"error": error_message})
 
 
-class ReflectionAgent(JudgeAgent):
+class ReflectionAgent(BaseAgent): # Changed from JudgeAgent to BaseAgent
     """
-    **AGENTE MELHORADO**: Evolução do JudgeAgent, capaz de gerar feedback textual detalhado.
-    - Inspirado na Lição 7 dos notebooks O'Reilly.
+    Evolução do JudgeAgent, capaz de gerar feedback textual detalhado.
     """
-    def __init__(self, name: str, purpose: str, model_name: str, prompt_template: str):
-        super().__init__(name=name, purpose=purpose)
-        self.model_name = model_name
+    def __init__(self, name: str, purpose: str, llm_client: BaseChatModel, prompt_template: str):
+        super().__init__(name)
+        self.purpose = purpose
         self.prompt_template = prompt_template
-        # A lógica do LLM é similar ao LLMAgent
-        self.llm_agent = LLMAgent(name, purpose, model_name, prompt_template, output_key="reflection_feedback")
+        self.llm_agent = LLMAgent(name, purpose, llm_client, prompt_template, output_key="reflection_feedback")
 
     def execute(self, state: GlobalState) -> AgentOutput:
         print(f"Executando ReflectionAgent '{self.name}'...")
-        # Usa o LLM para gerar o feedback
         llm_output = self.llm_agent.execute(state)
         feedback = llm_output.artifacts.get("reflection_feedback", "")
 
-        # Determina o status com base no feedback
         if "APROVADO" in feedback.upper():
             status = "APROVADO"
         else:
@@ -170,16 +155,14 @@ class ReflectionAgent(JudgeAgent):
 
 class SupervisorAgent(BaseAgent):
     """
-    **NOVO AGENTE**: Orquestra o fluxo decidindo qual agente chamar a seguir.
-    - Inspirado na Lição 8 dos notebooks O'Reilly.
+    Orquestra o fluxo decidindo qual agente chamar a seguir.
     """
-    def __init__(self, name: str, purpose: str, model_name: str, prompt_template: str, available_agents: List[str]):
+    def __init__(self, name: str, purpose: str, llm_client: BaseChatModel, prompt_template: str, available_agents: List[str]):
         super().__init__(name)
         self.purpose = purpose
         self.available_agents = available_agents
-        # Adiciona 'FINISH' como uma opção válida
         self.prompt_template = prompt_template.format(available_agents=str(available_agents + ["FINISH"]))
-        self.llm_agent = LLMAgent(name, purpose, model_name, self.prompt_template, output_key="next_agent")
+        self.llm_agent = LLMAgent(name, purpose, llm_client, self.prompt_template, output_key="next_agent")
 
     def execute(self, state: GlobalState) -> AgentOutput:
         print(f"Executando SupervisorAgent '{self.name}'...")
@@ -190,29 +173,22 @@ class SupervisorAgent(BaseAgent):
             print(f"AVISO: Supervisor retornou um agente inválido '{next_agent}'. Finalizando fluxo.")
             next_agent = "FINISH"
 
-        # O resultado é armazenado em `quality` para ser usado na aresta condicional
         return AgentOutput(quality={"next_agent": next_agent})
 
-
-# No final de src/agents.py
-import httpx
-
-# ... (após a classe SupervisorAgent)
 
 class UTCPAgent(BaseAgent):
     """
     Agente que executa chamadas de API diretas com base em manuais UTCP.
     """
-    def __init__(self, name: str, purpose: str, model_name: str, prompt_template: str, utcp_manuals: List[Dict], output_key: str):
+    def __init__(self, name: str, purpose: str, llm_client: BaseChatModel, prompt_template: str, utcp_manuals: List[Dict], output_key: str):
         super().__init__(name)
         self.purpose = purpose
         self.utcp_manuals = utcp_manuals
         self.output_key = output_key
-        # Usa um LLMAgent internamente para a lógica de decisão
         self.llm_agent = LLMAgent(
             name,
             purpose,
-            model_name,
+            llm_client,
             prompt_template,
             output_key="decision",
             force_json_output=True
@@ -221,13 +197,16 @@ class UTCPAgent(BaseAgent):
     def execute(self, state: GlobalState) -> AgentOutput:
         print(f"Executando UTCPAgent '{self.name}'...")
 
-        # 1. Usa o LLM para decidir qual ferramenta chamar e com quais parâmetros
-        # O prompt deve ser construído para guiar o LLM a retornar um JSON
-        # com "tool_name" e "parameters".
-        prompt_com_manuais = f"{self.llm_agent.prompt_template}\n\nManuais de Ferramentas Disponíveis (UTCP):\n{self.utcp_manuals}"
+        prompt_template_com_manuais = f"{self.llm_agent.prompt_template}\n\nManuais de Ferramentas Disponíveis (UTCP):\n{self.utcp_manuals}"
 
-        # Cria um novo prompt para o LLM que inclui os manuais
-        temp_llm = LLMAgent(self.name, self.purpose, self.llm_agent.model_name, prompt_com_manuais, "decision", True)
+        temp_llm = LLMAgent(
+            self.name,
+            self.purpose,
+            self.llm_agent.llm,
+            prompt_template_com_manuais,
+            "decision",
+            True
+        )
         llm_output = temp_llm.execute(state)
         decision = llm_output.artifacts.get("decision", {})
 
@@ -237,7 +216,6 @@ class UTCPAgent(BaseAgent):
         tool_name = decision.get("tool_name")
         parameters = decision.get("parameters", {})
 
-        # 2. Encontra o manual e a configuração da ferramenta
         manual_name, tool_func = tool_name.split('.')
         manual = next((m for m in self.utcp_manuals if m.get("name") == manual_name), None)
         if not manual:
@@ -247,7 +225,6 @@ class UTCPAgent(BaseAgent):
         if not tool_spec:
             return AgentOutput(quality={"error": f"Ferramenta '{tool_func}' não encontrada no manual '{manual_name}'."})
 
-        # 3. Constrói e executa a chamada HTTP com httpx
         config = manual.get("provider_config", {})
         base_url = config.get("base_url", "")
         endpoint = tool_spec.get("endpoint", "")
@@ -264,7 +241,6 @@ class UTCPAgent(BaseAgent):
                     response = client.get(f"{base_url}{endpoint}", params=parameters, headers=headers)
                 elif method == "POST":
                     response = client.post(f"{base_url}{endpoint}", json=parameters, headers=headers)
-                # Adicionar outros métodos (PUT, DELETE) se necessário
 
                 response.raise_for_status()
                 result = response.json()

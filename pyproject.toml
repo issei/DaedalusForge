@@ -38,3 +38,6 @@ exclude = "(^build/|^dist/|^venv/|^\\.venv/)"
 [tool.pytest.ini_options]
 addopts = "-q --maxfail=1"
 testpaths = ["tests"]
+pythonpath = ["."]
+# Add this line:
+bdd_features_base_dir = "tests/features"

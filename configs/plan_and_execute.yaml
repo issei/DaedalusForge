@@ -1,7 +1,7 @@
 process:
   name: "plan-and-execute-article-v1"
   start: "planner"
-  done_condition: "artifacts.final_article is not None"
+  done_condition: "artifacts.final_article"
 
 agents:
   planner:
@@ -11,7 +11,7 @@ agents:
     prompt_template: |
       Crie um plano detalhado para escrever um artigo sobre '{context[topic]}'.
       O plano deve incluir etapas como pesquisa, esboço, redação de seções e revisão.
-      Retorne o plano como uma lista de strings em um JSON com a chave "plan".
+      Retorne o plano como uma lista JSON de strings.
     output_key: "plan"
     force_json_output: true
 
@@ -19,29 +19,40 @@ agents:
     kind: "tool_using"
     purpose: "Executar uma etapa do plano de escrita, usando ferramentas se necessário."
     model_name: "gemini-1.5-pro"
-    tools: ["tavily_search"] # Ferramenta de pesquisa para a etapa de pesquisa
+    tools: ["tavily_search"]
     prompt_template: |
-      Você é um assistente de escrita. Sua tarefa atual é: {artifacts[plan][0]}.
-      Use as ferramentas disponíveis se precisar de informações.
-      Contexto atual: {context}
-      Artefatos já criados: {artifacts}
+      Answer the following questions as best you can. You have access to the following tools:
+      {tools}
+      Use the following format:
+      Question: the input question you must answer
+      Thought: you should always think about what to do
+      Action: the action to take, should be one of [{tool_names}]
+      Action Input: the input to the action
+      Observation: the result of the action
+      ... (this Thought/Action/Action Input/Observation can repeat N times)
+      Thought: I now know the final answer
+      Final Answer: the final answer to the original input question
+      Begin!
+      Question: Your task is to execute the first step of the plan: {artifacts[plan][0]}. The overall topic is '{context[topic]}'.
+      Thought:{agent_scratchpad}
     output_key: "step_result"
 
   updater:
     kind: "deterministic"
     purpose: "Atualizar o estado do processo com o resultado da etapa e remover a etapa concluída do plano."
-    function: "update_plan_and_artifacts" # (Esta função precisaria ser adicionada ao ToolRegistry)
+    function: "update_plan_and_artifacts"
 
   finalizer:
     kind: "llm"
     purpose: "Consolidar todos os resultados em um artigo final."
     model_name: "gpt-4o"
-    prompt_template: "Com base nos resultados {artifacts[step_results]}, escreva o artigo final sobre '{context[topic]}'."
+    prompt_template: "Com base nos resultados em {artifacts[step_results]}, escreva o artigo final sobre '{context[topic]}'."
     output_key: "final_article"
+    force_json_output: true
 
 edges:
-  - { from: "planner", to: "executor", condition: "artifacts.plan is not None" }
+  - { from: "planner", to: "executor" }
   - { from: "executor", to: "updater" }
-  - { from: "updater", to: "executor", condition: "artifacts.plan and len(artifacts.plan) > 0" }
-  - { from: "updater", to: "finalizer", condition: "artifacts.plan is None or len(artifacts.plan) == 0" }
+  - { from: "updater", to: "executor", condition: "artifacts.plan" }
+  - { from: "updater", to: "finalizer", condition: "not artifacts.plan" }
   - { from: "finalizer", to: "__end__" }
