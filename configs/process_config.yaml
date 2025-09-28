@@ -1,7 +1,7 @@
 process:
   name: "geracao-copy-marketing-v1"
   start: "analise_dores_promessas"
-  done_condition: "quality.review_status == 'APROVADO'"
+  done_condition: "'copy_canais' in artifacts"
 
 agents:
   analise_dores_promessas:
@@ -43,6 +43,7 @@ agents:
   critico_revisor:
     kind: "reflection"
     purpose: "Revisar a copy e decidir APROVADO/REFINAR."
+    observe: "copy_principal"
 
 edges:
   - from: "analise_dores_promessas"
