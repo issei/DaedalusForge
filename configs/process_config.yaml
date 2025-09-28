@@ -41,7 +41,7 @@ agents:
     output_key: "copy_canais"
 
   critico_revisor:
-    kind: "judge"
+    kind: "reflection"
     purpose: "Revisar a copy e decidir APROVADO/REFINAR."
 
 edges:

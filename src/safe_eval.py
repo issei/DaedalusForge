@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 from typing import Any, Dict
-from model import GlobalState
+from .model import GlobalState
 
 
 class SafeConditionEvaluator:
@@ -13,9 +13,10 @@ class SafeConditionEvaluator:
       - Operadores: and, or, not
       - Comparações: ==, !=, <, <=, >, >=
       - 'is not None' / 'is None'
+      - Função 'len()'
     """
 
-    ALLOWED_ROOTS = {"quality", "artifacts", "context"}
+    ALLOWED_ROOTS = {"quality", "artifacts", "context", "len"}
     ALLOWED_BOOL_OPS = (ast.And, ast.Or)
     ALLOWED_UNARY_OPS = (ast.Not,)
     ALLOWED_CMP_OPS = (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Is, ast.IsNot)
@@ -23,7 +24,6 @@ class SafeConditionEvaluator:
     def __init__(self, condition_string: str):
         self.expr_str = condition_string.strip()
         if not self.expr_str:
-            # Sem condição => sempre False (não ativa)
             self.ast = None
             return
         try:
@@ -33,8 +33,6 @@ class SafeConditionEvaluator:
         self._validate_ast(tree)
         self.ast = tree
 
-    # ---------- Public API ----------
-
     def evaluate(self, state: GlobalState) -> bool:
         if self.ast is None:
             return False
@@ -43,13 +41,11 @@ class SafeConditionEvaluator:
             "artifacts": state.artifacts,
             "context": state.context,
             "None": None,
+            "len": len,
         }
         return bool(self._eval_node(self.ast.body, env))
 
-    # ---------- Validation ----------
-
     def _validate_ast(self, node: ast.AST) -> None:
-        # Restrição de nós permitidos
         for n in ast.walk(node):
             if isinstance(n, ast.BoolOp) and not isinstance(n.op, self.ALLOWED_BOOL_OPS):
                 raise ValueError("Operador booleano não permitido.")
@@ -60,21 +56,15 @@ class SafeConditionEvaluator:
                     if not isinstance(op, self.ALLOWED_CMP_OPS):
                         raise ValueError("Operador de comparação não permitido.")
             if isinstance(n, ast.Call):
-                raise ValueError("Chamadas de função não são permitidas.")
+                if not (isinstance(n.func, ast.Name) and n.func.id == 'len'):
+                    raise ValueError(f"Apenas a função 'len' é permitida, mas '{getattr(n.func, 'id', 'N/A')}' foi encontrada.")
             if isinstance(n, ast.Attribute):
-                # Será validado no path (raiz precisa ser allowed)
                 pass
             if isinstance(n, ast.Name):
                 if n.id not in self.ALLOWED_ROOTS and n.id != "None":
                     raise ValueError(f"Identificador não permitido: {n.id}")
 
-    # ---------- Evaluation ----------
-
     def _resolve_path(self, env: Dict[str, Any], node: ast.AST) -> Any:
-        """
-        Converte 'quality.coverage' (Attribute chain) em env['quality']['coverage'].
-        """
-        # Suporta Name, Attribute encadeado
         parts = []
         cur = node
         while isinstance(cur, ast.Attribute):
@@ -133,13 +123,19 @@ class SafeConditionEvaluator:
                 left = right
             return result
 
+        if isinstance(node, ast.Call):
+            func = self._eval_node(node.func, env)
+            args = [self._eval_node(arg, env) for arg in node.args]
+            if func is len:
+                return func(*args)
+            raise ValueError("Chamada de função não permitida.")
+
         if isinstance(node, ast.Attribute):
             return self._resolve_path(env, node)
 
         if isinstance(node, ast.Name):
             if node.id == "None":
                 return None
-            # Raízes resolvidas diretamente
             if node.id in self.ALLOWED_ROOTS:
                 return env.get(node.id)
             raise ValueError("Identificador não permitido.")
@@ -147,7 +143,6 @@ class SafeConditionEvaluator:
         if isinstance(node, ast.Constant):
             return node.value
 
-        # Literais numéricos no Python < 3.8 (Num, Str, etc.)
         if hasattr(ast, "Num") and isinstance(node, getattr(ast, "Num")):
             return node.n
         if hasattr(ast, "Str") and isinstance(node, getattr(ast, "Str")):

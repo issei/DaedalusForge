@@ -4,6 +4,8 @@ langgraph
 langchain
 langchain-google-genai
 langchain-openai
+langchain-community
+langchain-experimental
 tenacity
 python-dotenv
 httpx
