@@ -163,11 +163,14 @@ class Orchestrator:
                 raise DSLValidationError(f"Tipo de agente não suportado: {kind}")
         return registry
 
-    def _wrap_node(self, agent: BaseAgent) -> Callable[[GlobalState], GlobalState]:
-        def _node_fn(state: GlobalState) -> GlobalState:
+    def _wrap_node(self, agent: BaseAgent) -> Callable[[GlobalState], dict]:
+        def _node_fn(state: GlobalState) -> dict:
             delta = agent.execute(state)
             new_state = apply_agent_output(state, delta)
-            return new_state
+            # LangGraph expects nodes to return a dictionary of the state changes,
+            # not a full Pydantic object. Returning the model dump ensures the
+            # state is updated correctly by the framework.
+            return new_state.model_dump()
         return _node_fn
 
     def _build_graph(

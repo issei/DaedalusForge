@@ -7,33 +7,26 @@ from pydantic import BaseModel
 def deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     """
     Merge profundo, imutável: retorna um NOVO dicionário.
-    - dicionário + dicionário: merge recursivo
-    - lista + lista: concatena (sem deduplicar)
-    - tipos primitivos: b sobrescreve a
+    - Dicionários são mesclados recursivamente.
+    - Listas e outros tipos de `b` SEMPRE sobrescrevem os de `a`.
     """
     if a is None:
         a = {}
     if b is None:
         return dict(a)
 
-    out: Dict[str, Any] = {}
-    a_keys = set(a.keys())
-    b_keys = set(b.keys())
-    for k in a_keys | b_keys:
-        av = a.get(k)
-        bv = b.get(k)
-        if k in a_keys and k not in b_keys:
-            out[k] = av
-        elif k not in a_keys and k in b_keys:
-            out[k] = bv
+    # Start with a copy of the base dictionary
+    out = dict(a)
+
+    for k, v_b in b.items():
+        v_a = out.get(k)
+        if isinstance(v_a, dict) and isinstance(v_b, dict):
+            # If both are dicts, merge them recursively
+            out[k] = deep_merge(v_a, v_b)
         else:
-            # k in ambos
-            if isinstance(av, dict) and isinstance(bv, dict):
-                out[k] = deep_merge(av, bv)
-            elif isinstance(av, list) and isinstance(bv, list):
-                out[k] = list(av) + list(bv)
-            else:
-                out[k] = bv
+            # For any other type (including lists or mismatched types),
+            # the value from `b` overwrites the value from `a`.
+            out[k] = v_b
     return out
 
 

@@ -19,7 +19,7 @@ class SafeConditionEvaluator:
     ALLOWED_ROOTS = {"quality", "artifacts", "context", "len"}
     ALLOWED_BOOL_OPS = (ast.And, ast.Or)
     ALLOWED_UNARY_OPS = (ast.Not,)
-    ALLOWED_CMP_OPS = (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Is, ast.IsNot)
+    ALLOWED_CMP_OPS = (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Is, ast.IsNot, ast.In)
 
     def __init__(self, condition_string: str):
         self.expr_str = condition_string.strip()
@@ -118,6 +118,8 @@ class SafeConditionEvaluator:
                     result = result and (left > right)
                 elif isinstance(op, ast.GtE):
                     result = result and (left >= right)
+                elif isinstance(op, ast.In):
+                    result = result and (left in right)
                 else:
                     raise ValueError("Operador de comparação não suportado.")
                 left = right

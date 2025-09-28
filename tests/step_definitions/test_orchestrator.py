@@ -38,38 +38,59 @@ def given_process_config(config_file, orchestrator_context):
     """Loads the YAML and prepares the orchestrator."""
     orchestrator_context['config_path'] = config_file.strip('"')
 
+# A dictionary to hold mock responses for different scenarios, promoting clarity and maintainability.
+SCENARIO_RESPONSES = {
+    "linear_process": {
+        "structured_output": [],  # All calls are regular invoke calls
+        "regular_output": [
+            # 1. analise_dores_promessas
+            MagicMock(content={"dores_promessas": "Initial ideas..."}),
+            # 2. geracao_copy
+            MagicMock(content={"copy_principal": "First draft"}),
+            # 3. critico_revisor
+            MagicMock(content="REFINAR"),
+            # 4. geracao_copy
+            MagicMock(content={"copy_principal": "Second draft"}),
+            # 5. critico_revisor
+            MagicMock(content="REFINAR"),
+            # 6. geracao_copy
+            MagicMock(content={"copy_principal": "Final draft"}),
+            # 7. critico_revisor
+            MagicMock(content="APROVADO"),
+            # 8. adaptacao_canais
+            MagicMock(content={"copy_canais": "Adapted copy for channels"}),
+        ]
+    },
+    "plan_and_execute": {
+        "structured_output": [
+            ["research", "write"],
+            {"final_article": "The final article content."}
+        ],
+        "regular_output": [
+            MagicMock(content="Final Answer: Research result"),
+            MagicMock(content="Final Answer: Writing result")
+        ]
+    },
+    "failing_agent": {
+        "structured_output": [],
+        "regular_output": [Exception("LLM invocation failed")]
+    }
+}
+
 @given(parsers.parse('a mock LLM client configured for the "{scenario_name}" scenario'))
 def given_mock_llm_for_scenario(mock_llm_client, scenario_name, orchestrator_context):
     """Configures the mock LLM with a sequence of responses for a specific scenario."""
     scenario_name = scenario_name.strip('"')
+    responses = SCENARIO_RESPONSES.get(scenario_name)
 
-    if scenario_name == "linear_process":
-        # This process involves a loop that runs until the critic approves.
-        # All agents in this flow use structured output.
-        responses = [
-            {"dores_promessas": "Initial ideas..."},      # 1. analise
-            {"copy_principal": "First draft"},            # 2. geracao_copy
-            {"feedback": "REFINAR"},                       # 3. critico_revisor
-            {"copy_principal": "Second draft"},           # 4. geracao_copy
-            {"feedback": "REFINAR"},                       # 5. critico_revisor
-            {"copy_principal": "Final draft"},            # 6. geracao_copy
-            {"feedback": "APROVADO"},                      # 7. critico_revisor
-        ]
-        mock_llm_client.with_structured_output.return_value.invoke.side_effect = responses
+    if not responses:
+        raise ValueError(f"Scenario '{scenario_name}' not configured in SCENARIO_RESPONSES.")
 
-    elif scenario_name == "plan_and_execute":
-        # This process has a loop controlled by the `updater` agent.
-        structured_responses = [
-            ["research", "write"],                          # 1. planner
-            {"final_article": "The final article content."} # 2. finalizer
-        ]
-        # The tool-using agent makes regular calls.
-        tool_responses = [
-            MagicMock(content="Research result"), # 1. executor
-            MagicMock(content="Writing result")   # 2. executor
-        ]
-        mock_llm_client.with_structured_output.return_value.invoke.side_effect = structured_responses
-        mock_llm_client.invoke.side_effect = tool_responses
+    # Configure structured and regular outputs based on the scenario's needs
+    if responses.get("structured_output"):
+        mock_llm_client.with_structured_output.return_value.invoke.side_effect = responses["structured_output"]
+    if responses.get("regular_output"):
+        mock_llm_client.invoke.side_effect = responses["regular_output"]
 
     orchestrator_context['mock_llm'] = mock_llm_client
 
@@ -94,13 +115,19 @@ def when_orchestrator_runs(orchestrator_context, mock_llm_client):
         final_state = orchestrator.run(initial_context)
         orchestrator_context['final_state'] = final_state
 
-@then(parsers.parse('the final state artifact "{artifact_key}" should exist'))
-def then_artifact_exists(artifact_key, orchestrator_context):
-    """Checks if a specific artifact was created."""
+@then(parsers.parse('the final state artifact "{artifact_key}" should exist and contain "{expected_content}"'))
+def then_artifact_exists_and_contains(artifact_key, expected_content, orchestrator_context):
+    """Checks if an artifact exists and its content matches expectations."""
     final_state = orchestrator_context['final_state']
     clean_artifact_key = artifact_key.strip('"')
+    clean_expected_content = expected_content.strip('"')
+
     assert clean_artifact_key in final_state.artifacts, \
         f"Artifact '{clean_artifact_key}' not found in {list(final_state.artifacts.keys())}"
+
+    actual_content = str(final_state.artifacts[clean_artifact_key])
+    assert clean_expected_content in actual_content, \
+        f"Expected content '{clean_expected_content}' not found in artifact '{clean_artifact_key}'."
 
 @then(parsers.parse('the mock LLM should have been called {call_count:d} times'))
 def then_llm_call_count(call_count, mock_llm_client):
@@ -111,3 +138,46 @@ def then_llm_call_count(call_count, mock_llm_client):
     )
     assert total_calls == call_count, \
         f"Expected {call_count} calls, but got {total_calls}"
+
+
+@then(parsers.parse('the final state quality artifact "{artifact_key}" should contain "{expected_content}"'))
+def then_quality_artifact_contains(artifact_key, expected_content, orchestrator_context):
+    """Checks if a quality artifact contains a specific string."""
+    final_state = orchestrator_context['final_state']
+    clean_artifact_key = artifact_key.strip('"')
+    clean_expected_content = expected_content.strip('"')
+
+    assert clean_artifact_key in final_state.quality, \
+        f"Quality artifact '{clean_artifact_key}' not found in {list(final_state.quality.keys())}"
+
+    actual_content = str(final_state.quality[clean_artifact_key])
+    assert clean_expected_content in actual_content, \
+        f"Expected content '{clean_expected_content}' not found in quality artifact '{clean_artifact_key}'."
+
+
+@when('the orchestrator is initialized')
+def when_orchestrator_is_initialized(orchestrator_context):
+    """Stores the function that should raise an error, to be called in the 'then' step."""
+    # This step is designed to be followed by a step that checks for an exception.
+    # It prepares a callable that will perform the initialization.
+    from src.orchestrator import Orchestrator
+    orchestrator_context['init_func'] = lambda: Orchestrator(config_path=orchestrator_context['config_path'])
+
+
+@then(parsers.parse('it should raise a "{exception_name}"'))
+def then_it_should_raise(exception_name, orchestrator_context):
+    """Checks if the expected exception was raised during initialization."""
+    # Importing here to avoid potential circular dependency issues at module level
+    from src.exceptions import DSLValidationError
+
+    clean_exception_name = exception_name.strip('"')
+
+    expected_exception = {"DSLValidationError": DSLValidationError}.get(clean_exception_name)
+    if not expected_exception:
+        raise ValueError(f"Exception type '{clean_exception_name}' not recognized for testing.")
+
+    with pytest.raises(expected_exception) as excinfo:
+        # The 'when' step prepared this function for us to call
+        orchestrator_context['init_func']()
+
+    assert excinfo.value is not None, f"Expected exception {clean_exception_name} was not raised."

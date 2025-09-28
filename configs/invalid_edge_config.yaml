@@ -1,0 +1,16 @@
+process:
+  name: "invalid-edge-process"
+  start: "agent_a"
+  done_condition: "quality.status == 'DONE'"
+
+agents:
+  agent_a:
+    kind: "llm"
+    purpose: "This is a valid agent."
+    prompt_template: "Hello from A"
+    output_key: "output_a"
+
+edges:
+  - from: "agent_a"
+    to: "non_existent_agent" # This agent is not defined
+    condition: "true"
